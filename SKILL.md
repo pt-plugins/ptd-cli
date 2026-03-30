@@ -17,24 +17,27 @@ Run `ptd status` to confirm a healthy connection to the browser extension. If it
 
 Before performing ANY site-specific or downloader-specific operation, you MUST first retrieve the available IDs:
 
-### Discover site IDs
-
 ```bash
-# Run a search with no --site flag. stderr prints each site ID:
-#   [pter] success: 5 results
-#   [mteam] success: 12 results
-# The bracketed values are the actual site IDs.
-ptd search "test" 2>&1 | grep '^\[' | sed 's/\[\(.*\)\].*/\1/'
+ptd site list --table                         # List all site IDs
+ptd downloader list --table                   # List all downloader IDs
 ```
 
-### Discover downloader IDs
+Site IDs are lowercase strings like `chdbits`, `mteam`, `hdhome`.
+Downloader IDs are opaque keys like `6JsFPshE1tXYVUVmh_ZL_`, not human names.
 
-```bash
-# Check download history — downloaderId fields contain the IDs
-ptd download-history --pretty
-```
+**Never guess IDs.** Always list first, then use the exact ID from the output.
 
 ## Commands
+
+### Discovery
+
+```bash
+ptd status                                    # Running browser instances
+ptd site list                                 # All configured sites (id, name, url)
+ptd site list --table                         # Table format
+ptd downloader list                           # All downloaders (id, name, type, address)
+ptd downloader list --table                   # Table format
+```
 
 ### Search
 
@@ -77,7 +80,6 @@ ptd downloader version <id>
 ptd site config <site-id>                     # Site settings
 ptd download-history                          # List all download history
 ptd keep-upload list                          # Cross-seeding tasks
-ptd status                                    # Running browser instances
 ```
 
 ## Global Options
@@ -101,3 +103,11 @@ ptd user-info current <site-id> | jq '.ratio'
 - 1: command failed
 - 2: no healthy instance (browser not running or extension not loaded)
 - 3: multiple instances, use `--instance` to select
+
+## Key Patterns
+
+- **Always list first**: run `ptd site list` / `ptd downloader list` before any command needing IDs
+- **Cross-site search**: omit `--site` to search all configured sites
+- **Download workflow**: `ptd downloader list` → `ptd search` → pick index → `ptd download` with downloader ID
+- **Instance auto-select**: works automatically with one browser; use `--instance` prefix match with multiple
+- **Extension must be initialized**: open the extension options page at least once to populate site/downloader config
