@@ -79,6 +79,18 @@ If `ptd status` shows no instances, make sure:
 
 ## Usage
 
+### Discovery
+
+```bash
+ptd status                                    # Show running browser instances
+ptd site list                                 # List all configured sites (ID, name, URL)
+ptd site list --table                         # Table format
+ptd downloader list                           # List all downloaders (ID, name, type, address)
+ptd downloader list --table                   # Table format
+```
+
+> **Tip:** Before running commands that require a site ID or downloader ID, run `ptd site list` and `ptd downloader list` first to discover valid IDs.
+
 ### Search
 
 ```bash

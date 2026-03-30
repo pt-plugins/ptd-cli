@@ -81,6 +81,18 @@ ptd status
 
 ## 使用
 
+### 发现
+
+```bash
+ptd status                                    # 查看运行中的浏览器实例
+ptd site list                                 # 列出所有已配置站点（ID、名称、URL）
+ptd site list --table                         # 表格格式
+ptd downloader list                           # 列出所有下载器（ID、名称、类型、地址）
+ptd downloader list --table                   # 表格格式
+```
+
+> **提示：** 在执行需要站点 ID 或下载器 ID 的命令前，先运行 `ptd site list` 和 `ptd downloader list` 获取有效的 ID。
+
 ### 搜索
 
 ```bash
