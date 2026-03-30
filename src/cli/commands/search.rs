@@ -12,13 +12,39 @@ pub struct SearchArgs {
     /// Search keyword
     keyword: String,
 
-    /// Site ID(s) to search. Specify multiple times for multi-site search.
-    #[arg(long = "site", required = true)]
+    /// Site ID(s) to search. Omit to search all enabled sites.
+    #[arg(long = "site")]
     sites: Vec<String>,
 
     /// Path to a JSON file containing a full IAdvancedSearchRequestConfig
     #[arg(long = "entry-file")]
     entry_file: Option<PathBuf>,
+}
+
+/// Fetch all site IDs that have allowSearch enabled from the extension's metadata store.
+fn get_all_searchable_sites(instance: Option<&str>, timeout: u64) -> Result<Vec<String>> {
+    let metadata = send::send_raw(instance, timeout, "getExtStorage", serde_json::json!("metadata"))?;
+
+    let sites = metadata
+        .get("sites")
+        .and_then(|s| s.as_object())
+        .context("no sites found in metadata")?;
+
+    let mut searchable = Vec::new();
+    for (site_id, config) in sites {
+        let allow_search = config
+            .get("allowSearch")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let is_offline = config
+            .get("isOffline")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if allow_search && !is_offline {
+            searchable.push(site_id.clone());
+        }
+    }
+    Ok(searchable)
 }
 
 pub fn run(args: SearchArgs, instance: Option<&str>, timeout: u64, format: OutputFormat) -> Result<()> {
@@ -30,41 +56,56 @@ pub fn run(args: SearchArgs, instance: Option<&str>, timeout: u64, format: Outpu
         serde_json::json!({})
     };
 
+    let sites = if args.sites.is_empty() {
+        let all = get_all_searchable_sites(instance, timeout)?;
+        eprintln!("Searching {} sites...", all.len());
+        all
+    } else {
+        args.sites.clone()
+    };
+
+    if sites.is_empty() {
+        anyhow::bail!("no searchable sites found. Open the PT-Depiler extension options page and add sites first, or use --site <siteId> to search a specific site.");
+    }
+
     let instance_id = send::resolve_instance_id(instance)?;
     let mut all_results: Vec<serde_json::Value> = Vec::new();
 
-    for site_id in &args.sites {
+    for site_id in &sites {
         let params = serde_json::json!({
             "siteId": site_id,
             "keyword": args.keyword,
             "searchEntry": search_entry,
         });
 
-        let result = send::send_raw(instance, timeout, "getSiteSearchResult", params)?;
-
-        // Extract the data array from ISearchResult
-        if let Some(data) = result.get("data").and_then(|d| d.as_array()) {
-            // Tag each result with the site it came from (for display)
-            for item in data {
-                let mut item = item.clone();
-                if let serde_json::Value::Object(ref mut obj) = item {
-                    obj.entry("_siteId").or_insert(serde_json::json!(site_id));
+        match send::send_raw(instance, timeout, "getSiteSearchResult", params) {
+            Ok(result) => {
+                // Extract the data array from ISearchResult
+                if let Some(data) = result.get("data").and_then(|d| d.as_array()) {
+                    for item in data {
+                        let mut item = item.clone();
+                        if let serde_json::Value::Object(ref mut obj) = item {
+                            obj.entry("_siteId").or_insert(serde_json::json!(site_id));
+                        }
+                        all_results.push(item);
+                    }
                 }
-                all_results.push(item);
+
+                let status = result
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("unknown");
+                let count = result
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                eprintln!("[{site_id}] {status}: {count} results");
+            }
+            Err(e) => {
+                eprintln!("[{site_id}] error: {e:#}");
             }
         }
-
-        // Print status message for this site
-        let status = result
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("unknown");
-        let count = result
-            .get("data")
-            .and_then(|d| d.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0);
-        eprintln!("[{site_id}] {status}: {count} results");
     }
 
     // Cache results for `ptd download <index>`

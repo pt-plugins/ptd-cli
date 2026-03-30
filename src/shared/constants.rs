@@ -18,6 +18,9 @@ pub const HELLO_TIMEOUT_SECS: u64 = 5;
 
 /// Methods the extension bridge will accept from the CLI.
 pub const ALLOWED_METHODS: &[&str] = &[
+    // Storage and logging (read-only)
+    "getExtStorage",
+    "getLogger",
     // Site config
     "getSiteUserConfig",
     "getSiteFavicon",
