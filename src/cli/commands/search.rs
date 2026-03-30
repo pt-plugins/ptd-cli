@@ -19,6 +19,10 @@ pub struct SearchArgs {
     /// Path to a JSON file containing a full IAdvancedSearchRequestConfig
     #[arg(long = "entry-file")]
     entry_file: Option<PathBuf>,
+
+    /// Maximum number of results per site (default: no limit)
+    #[arg(long)]
+    limit: Option<usize>,
 }
 
 /// Fetch all site IDs that have allowSearch enabled from the extension's metadata store.
@@ -80,27 +84,38 @@ pub fn run(args: SearchArgs, instance: Option<&str>, timeout: u64, format: Outpu
 
         match send::send_raw(instance, timeout, "getSiteSearchResult", params) {
             Ok(result) => {
+                let status = result
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("unknown");
+
                 // Extract the data array from ISearchResult
+                let total;
+                let shown;
                 if let Some(data) = result.get("data").and_then(|d| d.as_array()) {
-                    for item in data {
+                    total = data.len();
+                    let items: Vec<_> = match args.limit {
+                        Some(limit) => data.iter().take(limit).collect(),
+                        None => data.iter().collect(),
+                    };
+                    shown = items.len();
+                    for item in items {
                         let mut item = item.clone();
                         if let serde_json::Value::Object(ref mut obj) = item {
                             obj.entry("_siteId").or_insert(serde_json::json!(site_id));
                         }
                         all_results.push(item);
                     }
+                } else {
+                    total = 0;
+                    shown = 0;
                 }
 
-                let status = result
-                    .get("status")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("unknown");
-                let count = result
-                    .get("data")
-                    .and_then(|d| d.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                eprintln!("[{site_id}] {status}: {count} results");
+                if shown < total {
+                    eprintln!("[{site_id}] {status}: {shown}/{total} results (limited)");
+                } else {
+                    eprintln!("[{site_id}] {status}: {total} results");
+                }
             }
             Err(e) => {
                 eprintln!("[{site_id}] error: {e:#}");
