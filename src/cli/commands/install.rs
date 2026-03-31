@@ -69,8 +69,58 @@ pub fn run(args: InstallArgs) -> Result<()> {
     println!("Native messaging host manifest installed:");
     println!("  Path: {}", manifest_path.display());
     println!("  Host binary: {}", host_path.display());
+
+    // On Windows, also write registry key pointing to the manifest
+    #[cfg(target_os = "windows")]
+    {
+        write_windows_registry(&args.browser, &manifest_path)?;
+    }
+
     println!();
     println!("Restart your browser or reload the PT-Depiler extension to activate.");
+
+    Ok(())
+}
+
+/// Write a Windows registry key under HKCU pointing to the native messaging host manifest.
+///
+/// Each browser family has its own registry path:
+/// - Chrome:   HKCU\Software\Google\Chrome\NativeMessagingHosts\<name>
+/// - Chromium: HKCU\Software\Chromium\NativeMessagingHosts\<name>
+/// - Edge:     HKCU\Software\Microsoft\Edge\NativeMessagingHosts\<name>
+/// - Firefox:  HKCU\Software\Mozilla\NativeMessagingHosts\<name>
+#[cfg(target_os = "windows")]
+fn write_windows_registry(
+    browser: &BrowserFamily,
+    manifest_path: &std::path::Path,
+) -> Result<()> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let reg_path = match browser {
+        BrowserFamily::Chrome => {
+            format!(r"Software\Google\Chrome\NativeMessagingHosts\{NATIVE_HOST_NAME}")
+        }
+        BrowserFamily::Chromium => {
+            format!(r"Software\Chromium\NativeMessagingHosts\{NATIVE_HOST_NAME}")
+        }
+        BrowserFamily::Edge => {
+            format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{NATIVE_HOST_NAME}")
+        }
+        BrowserFamily::Firefox => {
+            format!(r"Software\Mozilla\NativeMessagingHosts\{NATIVE_HOST_NAME}")
+        }
+    };
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (key, _) = hkcu
+        .create_subkey(&reg_path)
+        .with_context(|| format!("failed to create registry key: HKCU\\{reg_path}"))?;
+
+    key.set_value("", &manifest_path.to_string_lossy().to_string())
+        .with_context(|| format!("failed to set registry value for HKCU\\{reg_path}"))?;
+
+    println!("  Registry: HKCU\\{reg_path}");
 
     Ok(())
 }
