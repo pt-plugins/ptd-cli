@@ -7,6 +7,10 @@ description: Use when the user asks to search torrents, download torrents, check
 
 CLI for the PT-Depiler browser extension via Chrome Native Messaging. All operations execute through the running browser extension, reusing its cookies, site definitions, and downloader configurations.
 
+## Installation
+
+If `ptd` is not installed, download pre-built binaries from [GitHub Releases](https://github.com/pt-plugins/ptd-cli/releases). Do NOT build from source — use the release binaries.
+
 ## Before you start
 
 Run `ptd status` to confirm a healthy connection to the browser extension. If it fails, the user needs to ensure the browser is running with PT-Depiler loaded and the native host registered (`ptd install`).

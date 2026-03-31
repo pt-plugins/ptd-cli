@@ -27,7 +27,14 @@ Three components:
 
 ## Install
 
-### 1. Build from source
+### 1. Download pre-built binaries
+
+Download the latest `ptd` and `ptd-host` from [GitHub Releases](https://github.com/pt-plugins/ptd-cli/releases), extract them into the same directory, and add it to your `PATH`.
+
+> **AI Agent users:** Download pre-built binaries from the Release page instead of building from source.
+
+<details>
+<summary>Build from source</summary>
 
 ```bash
 cargo build --release
@@ -35,6 +42,8 @@ cargo build --release
 ```
 
 Place both `ptd` and `ptd-host` in the same directory, and add it to your `PATH`.
+
+</details>
 
 ### 2. Register the native messaging host
 

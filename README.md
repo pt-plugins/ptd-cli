@@ -29,7 +29,14 @@ CLI <-- Unix socket <-- ptd-host <--stdin-- Chrome <------+
 
 ## 安装
 
-### 1. 从源码构建
+### 1. 下载预编译二进制
+
+从 [GitHub Releases](https://github.com/pt-plugins/ptd-cli/releases) 下载最新版本的 `ptd` 和 `ptd-host`，解压后将两个文件放在同一目录下，并添加到 `PATH`。
+
+> **AI Agent 用户：** 请直接从 Release 页面下载预编译二进制，无需从源码构建。
+
+<details>
+<summary>从源码构建</summary>
 
 ```bash
 cargo build --release
@@ -37,6 +44,8 @@ cargo build --release
 ```
 
 将 `ptd` 和 `ptd-host` 放在同一目录下，并添加到 `PATH`。
+
+</details>
 
 ### 2. 注册 Native Messaging Host
 
