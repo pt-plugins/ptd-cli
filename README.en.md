@@ -27,11 +27,29 @@ Three components:
 
 ## Install
 
-### 1. Download pre-built binaries
+### 1. Install CLI
+
+#### Homebrew (macOS / Linux)
+
+```bash
+# Add tap and install
+brew tap pt-plugins/ptd-cli https://github.com/pt-plugins/ptd-cli
+brew install ptd-cli
+```
+
+#### Scoop (Windows)
+
+```powershell
+# Add bucket and install
+scoop bucket add ptd-cli https://github.com/pt-plugins/ptd-cli
+scoop install ptd-cli
+```
+
+#### Manual Download (Pre-built Binaries)
 
 Download the latest `ptd` and `ptd-host` from [GitHub Releases](https://github.com/pt-plugins/ptd-cli/releases), extract them into the same directory, and add it to your `PATH`.
 
-> **AI Agent users:** Download pre-built binaries from the Release page instead of building from source.
+> **AI Agent users:** Use package managers (Homebrew / Scoop) or download pre-built binaries from the Release page instead of building from source.
 
 <details>
 <summary>Build from source</summary>
