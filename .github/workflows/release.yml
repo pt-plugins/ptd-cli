@@ -1,49 +1,61 @@
 name: Release
 
 on:
+  release:
+    types: [created]
   workflow_dispatch:
     inputs:
       version:
-        description: Release version without the v prefix (for example, 0.1.7)
+        description: Version without the v prefix (for example, 0.1.4)
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release
+  group: release-${{ github.event.release.tag_name || inputs.version }}
   cancel-in-progress: false
-
-env:
-  VERSION: ${{ inputs.version }}
-  TAG: v${{ inputs.version }}
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
-
+      version: ${{ steps.source.outputs.version }}
+      tag: ${{ steps.source.outputs.tag }}
+      publish: ${{ steps.source.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
-
-      - name: Validate release
+          persist-credentials: false
+      - name: Validate release inputs
         id: source
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Version must use the X.Y.Z format without a v prefix" >&2
-            exit 1
+          if [[ -n "$RELEASE_TAG" ]]; then
+            [[ "$RELEASE_TAG" == v* ]] || { echo "Release tag must start with v" >&2; exit 1; }
+            TAG="$RELEASE_TAG"
+            VERSION="${TAG#v}"
+            SOURCE_SHA="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            PUBLISH=true
+          else
+            VERSION="$INPUT_VERSION"
+            TAG="v${VERSION}"
+            SOURCE_SHA="$(git rev-parse HEAD)"
+            PUBLISH=false
           fi
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists" >&2
-            exit 1
-          fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "Invalid semantic version" >&2; exit 1; }
+          {
+            echo "sha=$SOURCE_SHA"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "publish=$PUBLISH"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -51,128 +63,129 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-
+          - {target: x86_64-unknown-linux-gnu, os: ubuntu-22.04}
+          - {target: aarch64-unknown-linux-gnu, os: ubuntu-22.04}
+          - {target: x86_64-apple-darwin, os: macos-15}
+          - {target: aarch64-apple-darwin, os: macos-15}
+          - {target: x86_64-pc-windows-msvc, os: windows-2022}
     runs-on: ${{ matrix.os }}
-
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install cross-compilation tools (aarch64-linux)
+      - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-
       - name: Set package version
         shell: bash
-        run: sed -i.bak -E "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
-
-      - name: Build
-        run: cargo build --release --target "${{ matrix.target }}"
-
-      - name: Package (unix)
-        if: runner.os != 'Windows'
         run: |
-          cd "target/${{ matrix.target }}/release"
-          tar czf "../../../ptd-cli-${TAG}-${{ matrix.target }}.tar.gz" ptd ptd-host
-
-      - name: Package (windows)
+          sed -i.bak -E "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          cargo update -p ptd-cli
+      - name: Test
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --locked --release --target "${{ matrix.target }}"
+      - name: Smoke test native executable
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: target/${{ matrix.target }}/release/ptd --help
+      - name: Package Unix binaries
+        if: runner.os != 'Windows'
+        run: tar -C "target/${{ matrix.target }}/release" -czf "ptd-cli-${TAG}-${{ matrix.target }}.tar.gz" ptd ptd-host
+      - name: Package Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/ptd.exe","target/${{ matrix.target }}/release/ptd-host.exe" -DestinationPath "ptd-cli-$env:TAG-${{ matrix.target }}.zip"
-
-      - name: Upload packaged binaries
-        uses: actions/upload-artifact@v4
+        run: Compress-Archive -Path "target/${{ matrix.target }}/release/ptd.exe","target/${{ matrix.target }}/release/ptd-host.exe" -DestinationPath "ptd-cli-$env:TAG-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
           path: ptd-cli-${{ env.TAG }}-${{ matrix.target }}.*
           if-no-files-found: error
 
-  publish:
-    name: Update manifests, tag, and publish
+  compatibility:
+    name: Ubuntu 22.04 and Homebrew smoke test
     needs: [prepare, build]
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
-          fetch-depth: 0
+          persist-credentials: false
+      - uses: Homebrew/actions/setup-homebrew@a657b8b0cd35d0f65cce41fce9b24cf054b49869
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-x86_64-unknown-linux-gnu
+          path: dist
+      - name: Test packaged executable and formula
+        shell: bash
+        run: |
+          tar -xzf "dist/ptd-cli-${TAG}-x86_64-unknown-linux-gnu.tar.gz" -C dist
+          dist/ptd --help
+          SHA="$(sha256sum "dist/ptd-cli-${TAG}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')"
+          sed -e "s/@VERSION@/${VERSION}/g" \
+              -e "s|@REPOSITORY@|${GITHUB_REPOSITORY}|g" \
+              -e "s|@LINUX_X86_64_URL@|file://${GITHUB_WORKSPACE}/dist/ptd-cli-${TAG}-x86_64-unknown-linux-gnu.tar.gz|g" \
+              -e "s/@LINUX_X86_64_SHA@/${SHA}/g" \
+              .github/release/ptd-cli.rb.in > /tmp/ptd-cli.rb
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          brew tap-new ptd-test/release
+          cp /tmp/ptd-cli.rb "$(brew --repository ptd-test/release)/Formula/ptd-cli.rb"
+          brew install --formula ptd-test/release/ptd-cli
+          brew test ptd-test/release/ptd-cli
 
+  publish:
+    name: Publish assets, then manifests
+    needs: [prepare, build, compatibility]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
-
-      - name: Update versions, URLs, and hashes
+      - name: Upload and verify every release asset
+        shell: bash
         run: |
-          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          MACOS_ARM64_SHA=$(sha256sum "dist/ptd-cli-${TAG}-aarch64-apple-darwin.tar.gz" | awk '{print $1}')
-          MACOS_X86_64_SHA=$(sha256sum "dist/ptd-cli-${TAG}-x86_64-apple-darwin.tar.gz" | awk '{print $1}')
-          LINUX_ARM64_SHA=$(sha256sum "dist/ptd-cli-${TAG}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
-          LINUX_X86_64_SHA=$(sha256sum "dist/ptd-cli-${TAG}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
-          WINDOWS_X86_64_SHA=$(sha256sum "dist/ptd-cli-${TAG}-x86_64-pc-windows-msvc.zip" | awk '{print $1}')
-
-          sed -i.bak -E "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
-          cargo metadata --format-version 1 --no-deps >/dev/null
-
-          sed -i.bak -E \
-            -e "s|version \".*\"|version \"${VERSION}\"|" \
-            -e "s|homepage \".*\"|homepage \"https://github.com/${GITHUB_REPOSITORY}\"|" \
-            -e "s|url \"https://github.com/[^/]+/[^/]+/releases|url \"https://github.com/${GITHUB_REPOSITORY}/releases|g" \
-            -e "s|\"aarch64-apple-darwin\" *=> *\".*\"|\"aarch64-apple-darwin\"      => \"${MACOS_ARM64_SHA}\"|" \
-            -e "s|\"x86_64-apple-darwin\" *=> *\".*\"|\"x86_64-apple-darwin\"       => \"${MACOS_X86_64_SHA}\"|" \
-            -e "s|\"aarch64-unknown-linux-gnu\" *=> *\".*\"|\"aarch64-unknown-linux-gnu\" => \"${LINUX_ARM64_SHA}\"|" \
-            -e "s|\"x86_64-unknown-linux-gnu\" *=> *\".*\"|\"x86_64-unknown-linux-gnu\"  => \"${LINUX_X86_64_SHA}\"|" \
-            Formula/ptd-cli.rb
-
-          jq --arg v "$VERSION" \
-             --arg u "${BASE_URL}/ptd-cli-${TAG}-x86_64-pc-windows-msvc.zip" \
-             --arg hash "$WINDOWS_X86_64_SHA" \
-             --arg auto_u "https://github.com/${GITHUB_REPOSITORY}/releases/download/v\$version/ptd-cli-v\$version-x86_64-pc-windows-msvc.zip" \
-             --arg hp "https://github.com/${GITHUB_REPOSITORY}" \
-             '.version = $v | .homepage = $hp | .architecture["64bit"].url = $u | .architecture["64bit"].hash = $hash | .autoupdate.architecture["64bit"].url = $auto_u' \
-             bucket/ptd-cli.json > bucket/ptd-cli.tmp.json
-          mv bucket/ptd-cli.tmp.json bucket/ptd-cli.json
-          rm -f Cargo.toml.bak Formula/ptd-cli.rb.bak
-
-      - name: Commit release metadata
+          gh release upload "$TAG" dist/* --clobber
+          ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for asset in dist/*; do grep -Fxq "$(basename "$asset")" <<< "$ASSETS"; done
+      - name: Generate release manifests
+        run: .github/release/render-manifests.sh "$VERSION" "$TAG" "$GITHUB_REPOSITORY" dist
+      - name: Publish release metadata idempotently
+        shell: bash
         run: |
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists" >&2
-            exit 1
-          fi
-
+          git pull --ff-only origin "${{ github.event.repository.default_branch }}"
+          mkdir -p Formula bucket
+          cp generated/ptd-cli.rb Formula/ptd-cli.rb
+          cp generated/ptd-cli.json bucket/ptd-cli.json
+          git add Formula/ptd-cli.rb bucket/ptd-cli.json
+          if git diff --cached --quiet; then echo "Release metadata is already current"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock Formula/ptd-cli.rb bucket/ptd-cli.json
-          git commit -m "chore(release): prepare ${TAG} [skip ci]"
+          git commit -m "chore(release): publish ${TAG} [skip ci]"
           git push origin HEAD:${{ github.event.repository.default_branch }}
-
-      - name: Create tag and GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-          gh release create "$TAG" dist/* --title "$TAG" --generate-notes
