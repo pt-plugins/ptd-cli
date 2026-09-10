@@ -1,0 +1,11 @@
+{
+  "version": "@VERSION@",
+  "description": "CLI for PT-Depiler browser extension via Native Messaging",
+  "homepage": "https://github.com/@REPOSITORY@",
+  "license": "MIT",
+  "architecture": {"64bit": {"url": "@WINDOWS_X86_64_URL@", "hash": "@WINDOWS_X86_64_SHA@"}},
+  "bin": ["ptd.exe", "ptd-host.exe"],
+  "env_set": {"PTD_NATIVE_HOST_PATH": "$dir\\ptd-host.exe"},
+  "checkver": "github",
+  "autoupdate": {"architecture": {"64bit": {"url": "https://github.com/@REPOSITORY@/releases/download/v$version/ptd-cli-v$version-x86_64-pc-windows-msvc.zip"}}}
+}

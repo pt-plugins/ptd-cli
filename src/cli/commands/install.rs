@@ -19,11 +19,19 @@ pub struct InstallArgs {
 }
 
 pub fn run(args: InstallArgs) -> Result<()> {
-    let host_binary = std::env::current_exe()
-        .context("cannot determine current executable path")?
-        .parent()
-        .context("executable has no parent directory")?
-        .join(if cfg!(windows) { "ptd-host.exe" } else { "ptd-host" });
+    let configured_host = std::env::var_os("PTD_NATIVE_HOST_PATH").map(std::path::PathBuf::from);
+    let host_binary = if let Some(path) = configured_host {
+        if !path.is_absolute() {
+            anyhow::bail!("PTD_NATIVE_HOST_PATH must be an absolute path");
+        }
+        path
+    } else {
+        std::env::current_exe()
+            .context("cannot determine current executable path")?
+            .parent()
+            .context("executable has no parent directory")?
+            .join(if cfg!(windows) { "ptd-host.exe" } else { "ptd-host" })
+    };
 
     if !host_binary.exists() {
         anyhow::bail!(
@@ -32,10 +40,14 @@ pub fn run(args: InstallArgs) -> Result<()> {
         );
     }
 
-    // Use dunce::canonicalize to avoid the \\?\ prefix on Windows,
-    // which some browsers may not handle correctly.
-    let host_path = dunce::canonicalize(&host_binary)
-        .context("failed to resolve ptd-host path")?;
+    // Preserve an explicitly configured path: package managers can point this
+    // at a stable symlink that survives upgrades. For standalone installs,
+    // canonicalize the binary next to `ptd` as before.
+    let host_path = if std::env::var_os("PTD_NATIVE_HOST_PATH").is_some() {
+        host_binary
+    } else {
+        dunce::canonicalize(&host_binary).context("failed to resolve ptd-host path")?
+    };
 
     let manifest = if args.browser.is_firefox() {
         serde_json::json!({

@@ -29,11 +29,29 @@ CLI <-- Unix socket <-- ptd-host <--stdin-- Chrome <------+
 
 ## 安装
 
-### 1. 下载预编译二进制
+### 1. 安装 CLI
+
+#### Homebrew (macOS / Linux)
+
+```bash
+# 添加 tap 并安装
+brew tap pt-plugins/ptd-cli https://github.com/pt-plugins/ptd-cli
+brew install ptd-cli
+```
+
+#### Scoop (Windows)
+
+```powershell
+# 添加 bucket 并安装
+scoop bucket add ptd-cli https://github.com/pt-plugins/ptd-cli
+scoop install ptd-cli
+```
+
+#### 手动下载预编译二进制
 
 从 [GitHub Releases](https://github.com/pt-plugins/ptd-cli/releases) 下载最新版本的 `ptd` 和 `ptd-host`，解压后将两个文件放在同一目录下，并添加到 `PATH`。
 
-> **AI Agent 用户：** 请直接从 Release 页面下载预编译二进制，无需从源码构建。
+> **AI Agent 用户：** 请优先使用包管理器（Homebrew / Scoop）或直接从 Release 页面下载预编译二进制，无需从源码构建。
 
 <details>
 <summary>从源码构建</summary>

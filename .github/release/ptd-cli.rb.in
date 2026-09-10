@@ -1,0 +1,36 @@
+class PtdCli < Formula
+  desc "CLI for PT-Depiler browser extension via Native Messaging"
+  homepage "https://github.com/@REPOSITORY@"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "@MACOS_ARM64_URL@"
+      sha256 "@MACOS_ARM64_SHA@"
+    else
+      url "@MACOS_X86_64_URL@"
+      sha256 "@MACOS_X86_64_SHA@"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "@LINUX_ARM64_URL@"
+      sha256 "@LINUX_ARM64_SHA@"
+    else
+      url "@LINUX_X86_64_URL@"
+      sha256 "@LINUX_X86_64_SHA@"
+    end
+  end
+
+  def install
+    libexec.install "ptd", "ptd-host"
+    (bin/"ptd").write_env_script libexec/"ptd",
+      PTD_NATIVE_HOST_PATH: opt_libexec/"ptd-host"
+  end
+
+  test do
+    assert_match "ptd", shell_output("#{bin}/ptd --help")
+  end
+end
